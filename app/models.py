@@ -5,25 +5,32 @@ from sqlalchemy.sql.sqltypes import TIMESTAMP
 
 from .database import Base
 
-class Models(Base):
+class Model(Base):
     __tablename__ = "models"
 
     id = Column(Integer, primary_key=True, nullable=False)
-    title = Column(String, nullable=False)
-    content = Column(String, nullable=False)
-    published = Column(Boolean, server_default='TRUE', nullable=False)
+    name = Column(String, nullable=False)
+    language = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    train_data = Column(String)
     created_at = Column(TIMESTAMP(timezone=True),
                         nullable=False, server_default=text('now()'))
-    owner_id = Column(Integer, ForeignKey(
-        "users.id", ondelete="CASCADE"), nullable=False)
 
-    owner = relationship("User")
+    # published = Column(Boolean, server_default='TRUE', nullable=False)
+    # owner_id = Column(Integer, ForeignKey(
+    #     "users.id", ondelete="CASCADE"), nullable=False)
+
+    # owner = relationship("User")
 
 
-class User(Base):
-    __tablename__ = "users"
+class Rating(Base):
+    __tablename__ = "ratings"
+
     id = Column(Integer, primary_key=True, nullable=False)
-    email = Column(String, nullable=False, unique=True)
-    password = Column(String, nullable=False)
+    translated_text = Column(String, nullable=False)
+    rating = Column(Boolean, nullable=False)
+    model_id = Column(Integer, ForeignKey("models.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True),
                         nullable=False, server_default=text('now()'))
+    
+    model = relationship("Model")

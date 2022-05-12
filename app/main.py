@@ -1,13 +1,16 @@
 from prompt_toolkit import HTML
 from pydantic import BaseModel
 from typing import Optional
-from fastapi import FastAPI, status, HTTPException
+from fastapi import FastAPI, status, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import time
 
+from sqlalchemy.orm import Session
+from . import models
+from .database import engine, get_db
 from .config import settings
 
 
@@ -63,54 +66,59 @@ from fastapi.params import Body
 
 @app.get('/')
 def root():
-    return {'message': 'Hello World ssss'}
+    return {'message': 'Hello World ss'}
 
 @app.get("/ner/models")
-def get_model_list():
-    cursor.execute(""" SELECT * FROM models WHERE type='NER' """)
-    res = cursor.fetchall()
-    return {"message": res}
+def get_model_list(db: Session = Depends(get_db)):
+
+    models_list = db.query(models.Model).all()
+    return models_list
+
 
 @app.post("/ner/models")
-def add_model(model: Model):
-    cursor.execute(""" INSERT INTO MODELS (NAME, LANGUAGE, TYPE, TRAIN_DATA) VALUES
-                    (%s, %s, %s, %s) RETURNING * """, 
-                    (model.name, model.language, model.type, model.train_data) )
-    res=cursor.fetchone()
-    conn.commit()
-    return {"message": res}
+def add_model(model: Model, db: Session = Depends(get_db)):
+
+    new_model = models.Model(**model.dict())
+    db.add(new_model)
+    db.commit()
+    db.refresh(new_model)
+
+    return {new_model}
 
 @app.get("/ner/models/{model_id}")
-def get_model(model_id: int):
-    cursor.execute(""" SELECT * FROM models WHERE type='NER' AND id = %s """, (str(model_id),))
-    res = cursor.fetchone()
-    return {"message": res}
+def get_model(model_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.Model).filter(models.Model.id == model_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"User with id: {model_id} does not exist")
+    return {user}
 
 
 @app.get("/ner/models/{model_id}/ratings")
-def get_rating(model_id: int):
-    cursor.execute("""SELECT * FROM models WHERE id = %s """, (str(model_id), ))
-    if not cursor.fetchone():
+def get_rating(model_id: int, db: Session = Depends(get_db)):
+
+    user = db.query(models.Model).filter(models.Model.id == model_id).first()
+    if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"model with id: {model_id} not found")
+                            detail=f"User with id: {model_id} does not exist")
     else:
-        cursor.execute("""SELECT * FROM RATINGS WHERE model_id = %s """, (str(model_id), ))
-        res = cursor.fetchall()
-        return {"message": res}
+        ratings = db.query(models.Rating).filter(models.Rating.model_id == model_id).all()
+        return ratings
+
 
 @app.post("/ner/models/{model_id}/ratings")
-def post_rating(model_id: int, rating: Rating):
-    cursor.execute("""SELECT * FROM models WHERE id = %s """, (str(model_id), ))
-    if not cursor.fetchone():
+def post_rating(model_id: int, rating: Rating, db: Session = Depends(get_db)):
+    user = db.query(models.Model).filter(models.Model.id == model_id).first()
+    if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"model with id: {model_id} not found")
+                            detail=f"User with id: {model_id} does not exist")
     else:
-        cursor.execute("""INSERT INTO RATINGS (model_id, translated_text, rating) 
-                        VALUES (%s, %s, %s) RETURNING * """,
-                        (rating.model_id, rating.translated_text, rating.rating) )
-        new_post = cursor.fetchone()
-        conn.commit()
-        return {"message": new_post}
+        new_rating = models.Rating(**rating.dict())
+        db.add(new_rating)
+        db.commit()
+        db.refresh(new_rating)
+        return {new_rating}
+
 
 # @app.get("/ner/models/{model_id}/ratings/{rating_id}")
 # def get_rating(model_id: int, rating_id: int):
