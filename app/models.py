@@ -13,14 +13,10 @@ class Model(Base):
     language = Column(String, nullable=False)
     type = Column(String, nullable=False)
     train_data = Column(String)
+    path = Column(String)
+    tokenizer = Column(String)
     created_at = Column(TIMESTAMP(timezone=True),
                         nullable=False, server_default=text('now()'))
-
-    # published = Column(Boolean, server_default='TRUE', nullable=False)
-    # owner_id = Column(Integer, ForeignKey(
-    #     "users.id", ondelete="CASCADE"), nullable=False)
-
-    # owner = relationship("User")
 
 
 class Rating(Base):

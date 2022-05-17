@@ -9,12 +9,12 @@ services:
     volumes:
       - ./:/usr/src/app:ro
     command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    # environment:
-    #   - DB_PASSWORD=${DB_PASSWORD}
-    #   - DB_USER=${DB_USER}
-    #   - DB_NAME=${DB_NAME}
-    #   - DB_HOST=${DB_HOST}
-    #   - DB_PORT=5432
+    environment:
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_USER=${DB_USER}
+      - DB_NAME=${DB_NAME}
+      - DB_HOST=postgres
+      - DB_PORT=5432
     env_file:
       - ./.env
   postgres:

@@ -1,7 +1,7 @@
 from prompt_toolkit import HTML
 from pydantic import BaseModel
 from typing import Optional
-from fastapi import FastAPI, status, HTTPException, Depends
+from fastapi import FastAPI, status, HTTPException, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 import psycopg2
@@ -9,10 +9,12 @@ from psycopg2.extras import RealDictCursor
 import time
 
 from sqlalchemy.orm import Session
+from sqlalchemy import delete
 from . import models
 from .database import engine, get_db
 from .config import settings
-
+from transformers import AutoModelForTokenClassification, AutoConfig, AutoTokenizer
+from .utils import get_ner_tags, label2id, id2label
 
 ## uvicorn main:app --reload
 
@@ -26,30 +28,9 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-
-
-
-while True:
-    try:
-        conn = psycopg2.connect(host=settings.db_host, database=settings.db_name, user=settings.db_user,
-                               password=settings.db_password, cursor_factory=RealDictCursor)
-        cursor = conn.cursor()
-        print("database connection successful")
-        break
-    except Exception as error:
-        print("database connection failed")
-        print("error:", error)
-        time.sleep(2)
-
-
-
-
-
 class TextToTranslate(BaseModel):
-    text_to_translate: str
-    model_type: str
+    text: str
     html: bool = False
-    rating: Optional[int] = None
 
 class Rating(BaseModel):
     translated_text: str
@@ -61,12 +42,16 @@ class Model(BaseModel):
     language: str
     type: str
     train_data: Optional[str] = None
+    path: str
+    tokenizer: str
 
 from fastapi.params import Body
 
 @app.get('/')
 def root():
     return {'message': 'Hello World ss'}
+
+# "/usr/src/app/models/BERT_Chinese_ZH/checkpoint-33753"
 
 @app.get("/ner/models")
 def get_model_list(db: Session = Depends(get_db)):
@@ -85,6 +70,12 @@ def add_model(model: Model, db: Session = Depends(get_db)):
 
     return {new_model}
 
+@app.delete("/ner/models")
+def del_models( db: Session = Depends(get_db) ):
+    db.query(models.Model).delete(synchronize_session=False)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 @app.get("/ner/models/{model_id}")
 def get_model(model_id: int, db: Session = Depends(get_db)):
     user = db.query(models.Model).filter(models.Model.id == model_id).first()
@@ -92,6 +83,17 @@ def get_model(model_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"User with id: {model_id} does not exist")
     return {user}
+
+@app.delete("/ner/models/{model_id}")
+def get_model(model_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.Model).filter(models.Model.id == model_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"User with id: {model_id} does not exist")
+    else:
+        db.query(models.Model).where(models.Model.id == model_id).delete(synchronize_session=False)
+        db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/ner/models/{model_id}/ratings")
@@ -119,6 +121,29 @@ def post_rating(model_id: int, rating: Rating, db: Session = Depends(get_db)):
         db.refresh(new_rating)
         return {new_rating}
 
+@app.post("/ner/models/{model_id}/prediction")
+def make_prediction(model_id: int, text_to_translate: TextToTranslate, db: Session = Depends(get_db)):
+    user = db.query(models.Model).filter(models.Model.id == model_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Model with id: {model_id} does not exist")
+
+    path, tokenizer_path = user.path, user.tokenizer
+    if (not path) or (not tokenizer_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Unable to find model of id {model_id}")
+   
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
+    config = AutoConfig.from_pretrained(path, label2id = label2id,  id2label=id2label)
+    model = AutoModelForTokenClassification.from_pretrained(path, config = config).to("cpu")
+
+    res = get_ner_tags(text_to_translate.text, model, tokenizer, user.name, text_to_translate.html)
+    del tokenizer
+    del config
+    del model
+
+    return res
 
 # @app.get("/ner/models/{model_id}/ratings/{rating_id}")
 # def get_rating(model_id: int, rating_id: int):
