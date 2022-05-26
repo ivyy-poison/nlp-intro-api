@@ -24,7 +24,7 @@ label2id =  {
     "B-LOC": 5,
     "I-LOC": 6,
     "ERR": 7
-  }
+}
 
 def get_ner_tags(sequence, model, tokenizer, model_name, html=False,):
     """
@@ -76,3 +76,64 @@ def get_displacy_render(sequence, entities, model_name):
     }
     html = displacy.render(dict_to_render, style="ent", manual=True)
     return html
+
+
+
+def extract_triplets(text):
+    triplets = []
+    relation, subject, relation, object_ = '', '', '', ''
+    text = text.strip()
+    current = 'x'
+    for token in text.replace("<s>", "").replace("<pad>", "").replace("</s>", "").split():
+        if token == "<triplet>":
+            current = 't'
+            if relation != '':
+                # triplets.append({'head': subject.strip(), 'type': relation.strip(),'tail': object_.strip()})
+                triplets.append((subject.strip(), relation.strip(),object_.strip()))
+                relation = ''
+            subject = ''
+        elif token == "<subj>":
+            current = 's'
+            if relation != '':
+                # triplets.append({'head': subject.strip(), 'type': relation.strip(),'tail': object_.strip()})
+                triplets.append((subject.strip(), relation.strip(),object_.strip()))
+            object_ = ''
+        elif token == "<obj>":
+            current = 'o'
+            relation = ''
+        else:
+            if current == 't':
+                subject += ' ' + token
+            elif current == 's':
+                object_ += ' ' + token
+            elif current == 'o':
+                relation += ' ' + token
+    if subject != '' and relation != '' and object_ != '':
+        # triplets.append({'head': subject.strip(), 'type': relation.strip(),'tail': object_.strip()})
+        triplets.append((subject.strip(), relation.strip(),object_.strip()))
+    return triplets
+
+
+def get_rebel_rel_preds(sequence, tokenizer, model):
+    gen_kwargs = {
+      "max_length": 256,
+      "length_penalty": -20,
+      "num_beams": 3,
+      "num_return_sequences": 3,
+    }
+    model_inputs = tokenizer(sequence, max_length=256, padding=True, truncation=True, return_tensors = 'pt')
+    generated_tokens = model.generate(
+        model_inputs["input_ids"].to(model.device),
+        attention_mask=model_inputs["attention_mask"].to(model.device),
+        **gen_kwargs,
+    )
+
+    # Extract text
+    decoded_preds = tokenizer.batch_decode(generated_tokens, skip_special_tokens=False)
+
+    pred_list = []
+
+    # Extract triplets
+    for idx, sentence in enumerate(decoded_preds):
+        pred_list.extend(extract_triplets(sentence))
+    return list(set(pred_list))
